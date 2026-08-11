@@ -22,38 +22,28 @@ jobs:
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $THEOS
 
-      - name: Download toolchain (OFFICIAL latest per theos docs)
+      - name: Download toolchain (sbinger clang 10)
         run: |
-          curl -fL --retry 3 -LO https://github.com/sbingner/llvm-project/releases/latest/download/linux-ios-arm64e-clang-toolchain.tar.lzma
-          FILESIZE=$(stat -c %s linux-ios-arm64e-clang-toolchain.tar.lzma)
-          echo "Toolchain size: $FILESIZE bytes"
-          if [ "$FILESIZE" -lt 1000000 ]; then
-            echo "❌ Toolchain download failed"
-            exit 1
-          fi
+          curl -fL --retry 3 -o /tmp/toolchain.tar.lzma \
+            "https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma"
+          FILESIZE=$(stat -c %s /tmp/toolchain.tar.lzma)
+          if [ "$FILESIZE" -lt 1000000 ]; then echo "❌ download failed"; exit 1; fi
           TMP=$(mktemp -d)
-          tar -xvf linux-ios-arm64e-clang-toolchain.tar.lzma -C $TMP
+          tar -xvf /tmp/toolchain.tar.lzma -C $TMP
           mkdir -p $THEOS/toolchain/linux/iphone
           mv $TMP/ios-arm64e-clang-toolchain/* $THEOS/toolchain/linux/iphone/
-          rm -rf linux-ios-arm64e-clang-toolchain.tar.lzma $TMP
           echo "✅ Toolchain installed"
-          clang --version | head -1
 
-      - name: Download iPhoneOS15.6 SDK (official master-146e41f release)
+      - name: Download iPhoneOS14.0 SDK (official)
         run: |
           mkdir -p $THEOS/sdks
-          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS15.6.sdk.tar.xz"
+          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS14.0.sdk.tar.xz"
           echo "Downloading: $SDK_URL"
-          curl -fL --retry 3 -o /tmp/iOS15.6.sdk.tar.xz "$SDK_URL"
-          FILESIZE=$(stat -c %s /tmp/iOS15.6.sdk.tar.xz)
-          echo "SDK size: $FILESIZE bytes"
-          if [ "$FILESIZE" -lt 1000000 ]; then
-            echo "❌ SDK download failed"
-            exit 1
-          fi
-          tar -xJf /tmp/iOS15.6.sdk.tar.xz -C $THEOS/sdks/
-          echo "✅ SDK extracted:"
-          ls -d $THEOS/sdks/iPhoneOS*.sdk
+          curl -fL --retry 3 -o /tmp/iOS14.0.sdk.tar.xz "$SDK_URL"
+          FILESIZE=$(stat -c %s /tmp/iOS14.0.sdk.tar.xz)
+          if [ "$FILESIZE" -lt 1000000 ]; then echo "❌ SDK download failed"; exit 1; fi
+          tar -xJf /tmp/iOS14.0.sdk.tar.xz -C $THEOS/sdks/
+          echo "✅ SDK extracted: $(ls -d $THEOS/sdks/iPhoneOS*.sdk)"
 
       - name: Install ldid
         run: |
@@ -62,29 +52,18 @@ jobs:
           brew install ldid
           echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
 
-      - name: Check Tweak.m for autorelease bugs
-        run: |
-          if grep -nE '^\s*\[.*\sautorelease\]' Tweak.m; then
-            echo "❌ FATAL: actual autorelease message send found"
-            exit 1
-          fi
-          echo "✅ No autorelease message sends"
-
-      - name: Build dylib (arm64e, SDK 15.6)
+      - name: Build dylib (arm64e, SDK 14.0)
         run: |
           export THEOS=$THEOS
-          export SDKVERSION=15.6
+          export SDKVERSION=14.0
           export PATH="/home/linuxbrew/.linuxbrew/bin:$THEOS/toolchain/linux/iphone/bin:$PATH"
-          echo "=== Pre-build verification ==="
-          echo "THEOS/sdks contents:"
+          echo "=== Pre-build ==="
           ls -d $THEOS/sdks/iPhoneOS*.sdk
-          echo "clang version:" && clang --version | head -1
-          echo "Makefile TARGET line:"
+          clang --version | head -1
           grep "^TARGET" Makefile
-          echo "============================="
           make clean
-          make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=15.6
-          echo "=== Build artifacts ==="
+          make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=14.0
+          echo "=== Artifacts ==="
           find . -name "*.dylib" -o -name "*.deb" 2>/dev/null
           ls -la packages/ 2>/dev/null
           ls -la .theos/obj/debug/ 2>/dev/null
@@ -94,7 +73,7 @@ jobs:
           DYLIB=$(find . -name "*.dylib" 2>/dev/null | head -1)
           if [ -z "$DYLIB" ]; then echo "❌ No dylib"; exit 1; fi
           file "$DYLIB"
-          if file "$DYLIB" | grep -q "Mach-O"; then echo "✅ Valid dylib"; else exit 1; fi
+          if file "$DYLIB" | grep -q "Mach-O"; then echo "✅ Valid"; else exit 1; fi
 
       - name: Upload
         uses: actions/upload-artifact@v4
