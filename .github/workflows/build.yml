@@ -10,14 +10,13 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       THEOS: /home/runner/theos
-      SDKVERSION: "15.6"
     steps:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl git make fakeroot perl unzip xz-utils lzma
+          sudo apt-get install -y curl git make fakeroot perl unzip xz-utils lzma libncurses5
 
       - name: Clone theos
         run: |
@@ -70,12 +69,10 @@ jobs:
       - name: Build dylib (arm64e)
         run: |
           export THEOS=$THEOS
-          export SDKVERSION=15.6
           export PATH="/home/linuxbrew/.linuxbrew/bin:$THEOS/toolchain/linux/iphone/bin:$PATH"
 
           echo "=== Pre-build checks ==="
           echo "THEOS = $THEOS"
-          echo "SDKVERSION = $SDKVERSION"
           ls -d $THEOS/sdks/iPhoneOS*.sdk
           ls $THEOS/toolchain/linux/iphone/bin/ | head -5
           echo "========================="

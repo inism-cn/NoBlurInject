@@ -1,15 +1,11 @@
-# NoBlurInject - Universal Blur Disabler for TrollStore/TrollFools
-# 编译目标: iOS 15.6 SDK, arm64e (A12+), 向下兼容 iOS 15.0
-
-# 强制锁定 SDK 版本，防止被环境变量或其他 makefile 覆盖
-SDKVERSION := 15.6
-TARGET := iphone:clang:$(SDKVERSION):15.0
-
+# NoBlurInject – Pure ObjC Runtime dylib (no Logos)
+TARGET := iphone:clang:15.6:15.0
 ARCHS := arm64e
-TWEAK_NAME := NoBlurInject
 
-NoBlurInject_FILES := Tweak.x
-NoBlurInject_CFLAGS := -fobjc-arc
+LIBRARY_NAME := NoBlurInject
+NoBlurInject_FILES := Tweak.m
+NoBlurInject_CFLAGS := -fobjc-arc -fvisibility=hidden
+NoBlurInject_INSTALL_PATH := /usr/lib
 
 include $(THEOS)/makefiles/common.mk
-include $(THEOS_MAKE_PATH)/tweak.mk
+include $(THEOS_MAKE_PATH)/library.mk
