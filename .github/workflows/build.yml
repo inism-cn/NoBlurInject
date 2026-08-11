@@ -24,7 +24,7 @@ jobs:
       - name: Download & verify iOS SDK (iPhoneOS15.6)
         run: |
           mkdir -p $HOME/theos/sdks
-          SDK_URL="https://github.com/theos/sdks/releases/download/SDK-Release-1/iPhoneOS15.6.sdk.tar.xz"
+          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS15.6.sdk.tar.xz"
           echo "Downloading: $SDK_URL"
           curl -fL --retry 3 -o /tmp/iPhoneOS15.6.sdk.tar.xz "$SDK_URL"
 
