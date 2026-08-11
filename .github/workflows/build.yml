@@ -25,15 +25,14 @@ jobs:
         run: |
           curl -fL --retry 3 -o /tmp/toolchain.tar.lzma \
             "https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma"
-          
-          # 校验文件大小
+
           FILESIZE=$(stat -c %s /tmp/toolchain.tar.lzma)
           echo "Toolchain size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then
             echo "❌ Toolchain download failed"
             exit 1
           fi
-          
+
           TMP=$(mktemp -d)
           tar --lzma -xvf /tmp/toolchain.tar.lzma -C $TMP
           mkdir -p $THEOS/toolchain/linux/iphone
@@ -41,27 +40,23 @@ jobs:
           echo "✅ Toolchain installed:"
           ls $THEOS/toolchain/linux/iphone/bin/
 
-      - name: Download & verify iPhoneOS15.6 SDK (official URL)
+      - name: Download iPhoneOS15.6 SDK (OFFICIAL URL)
         run: |
           mkdir -p $THEOS/sdks
           SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS15.6.sdk.tar.xz"
           echo "Downloading SDK from: $SDK_URL"
           curl -fL --retry 3 -o /tmp/iPhoneOS15.6.sdk.tar.xz "$SDK_URL"
-          
-          # 校验文件大小 (应该是 ~15.2 MB)
+
           FILESIZE=$(stat -c %s /tmp/iPhoneOS15.6.sdk.tar.xz)
           echo "SDK file size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then
-            echo "❌ SDK download failed ($FILESIZE bytes), trying fallback..."
-            # 备用方案：克隆整个 sdks 仓库
-            git clone --depth 1 https://github.com/theos/sdks.git /tmp/sdks-repo
-            cp -r /tmp/sdks-repo/iPhoneOS15.6.sdk $THEOS/sdks/
-            cp -r /tmp/sdks-repo/iPhoneOS16.5.sdk $THEOS/sdks/
-          else
-            tar -xJf /tmp/iPhoneOS15.6.sdk.tar.xz -C $THEOS/sdks/
-            echo "✅ SDK extracted:"
-            ls -la $THEOS/sdks/
+            echo "❌ SDK download failed ($FILESIZE bytes)"
+            exit 1
           fi
+
+          tar -xJf /tmp/iPhoneOS15.6.sdk.tar.xz -C $THEOS/sdks/
+          echo "✅ SDK extracted. Contents of \$THEOS/sdks:"
+          ls -la $THEOS/sdks/
 
       - name: Install ldid via Homebrew
         run: |
@@ -70,15 +65,21 @@ jobs:
           brew install ldid
           echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
 
-      - name: Build dylib (arm64e)
+      - name: Build dylib (arm64e, SDK 15.6)
         run: |
           export THEOS=$HOME/theos
           export PATH="/home/linuxbrew/.linuxbrew/bin:$THEOS/toolchain/linux/iphone/bin:$PATH"
           export SDKVERSION=15.6
-          
+          export THEOS_SDKS_PATH=$THEOS/sdks
+
+          # 调试：确认 SDK 目录存在
+          echo "=== SDK check ==="
+          ls -d $THEOS/sdks/iPhoneOS*.sdk || echo "NO SDK FOUND"
+          echo "==============="
+
           make clean
           make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e
-          
+
           echo "=== Build output ==="
           find . -name "*.dylib" -o -name "*.deb" 2>/dev/null
           ls -la packages/ 2>/dev/null
