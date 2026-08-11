@@ -1,4 +1,3 @@
-# NoBlurInject – Universal Blur Disabler (pure ObjC runtime, no Logos)
 TARGET := iphone:clang:14.5:14.0
 ARCHS := arm64e
 
