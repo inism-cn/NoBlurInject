@@ -29,16 +29,17 @@ jobs:
           FILESIZE=$(stat -c %s /tmp/toolchain.tar.lzma)
           echo "Toolchain size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then
-            echo "❌ Toolchain download failed"
+            echo "❌ Toolchain download failed (file too small)"
             exit 1
           fi
           TMP=$(mktemp -d)
           tar --lzma -xvf /tmp/toolchain.tar.lzma -C $TMP
           mkdir -p $THEOS/toolchain/linux/iphone
           cp -r $TMP/ios-arm64e-clang-toolchain/. $THEOS/toolchain/linux/iphone/
-          echo "✅ Toolchain installed"
+          echo "✅ Toolchain installed:"
+          ls $THEOS/toolchain/linux/iphone/bin/ | head -10
 
-      - name: Download iPhoneOS14.5 SDK (official)
+      - name: Download iPhoneOS14.5 SDK (official theos/sdks)
         run: |
           mkdir -p $THEOS/sdks
           SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS14.5.sdk.tar.xz"
@@ -47,7 +48,7 @@ jobs:
           FILESIZE=$(stat -c %s /tmp/iOS14.5.sdk.tar.xz)
           echo "SDK size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then
-            echo "❌ SDK download failed"
+            echo "❌ SDK download failed (file too small: $FILESIZE bytes)"
             exit 1
           fi
           tar -xJf /tmp/iOS14.5.sdk.tar.xz -C $THEOS/sdks/
@@ -61,20 +62,58 @@ jobs:
           brew install ldid
           echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
 
-      - name: Build dylib (arm64e)
+      - name: Verify Tweak.m has no autorelease (the previous bug)
+        run: |
+          echo "=== Checking Tweak.m for the old autorelease bug ==="
+          if grep -n "autorelease" Tweak.m; then
+            echo "❌ FATAL: Tweak.m still contains 'autorelease' - this will fail under ARC"
+            exit 1
+          else
+            echo "✅ No autorelease calls found - ARC safe"
+          fi
+          echo "=== Tweak.m line count ==="
+          wc -l Tweak.m
+
+      - name: Build dylib (arm64e, SDK 14.5)
         run: |
           export THEOS=$THEOS
           export PATH="/home/linuxbrew/.linuxbrew/bin:$THEOS/toolchain/linux/iphone/bin:$PATH"
+
           echo "=== Pre-build checks ==="
-          ls -d $THEOS/sdks/iPhoneOS*.sdk
-          ls $THEOS/toolchain/linux/iphone/bin/ | head -5
+          echo "THEOS         = $THEOS"
+          echo "SDK path      = $(ls -d $THEOS/sdks/iPhoneOS*.sdk 2>/dev/null || echo 'NOT FOUND')"
+          echo "clang binary   = $($THEOS/toolchain/linux/iphone/bin/clang --version 2>/dev/null | head -1 || echo 'NOT FOUND')"
           echo "========================="
+
           make clean
-          make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e
+          make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e 2>&1
+
           echo "=== Build artifacts ==="
           find . -name "*.dylib" -o -name "*.deb" 2>/dev/null
           ls -la packages/ 2>/dev/null
-          ls -la .theos/obj/debug/ 2>/dev/null
+          ls -la .theos/obj/arm64e/ 2>/dev/null
+
+      - name: Verify dylib output
+        run: |
+          echo "=== Searching for dylib output ==="
+          DYLIB=""
+          for f in $(find . -name "*.dylib" 2>/dev/null); do
+            echo "Found: $f ($(stat -c %s $f) bytes)"
+            DYLIB="$f"
+          done
+          if [ -z "$DYLIB" ]; then
+            echo "❌ No .dylib file found - build failed"
+            exit 1
+          fi
+          # 检查是否是 Mach-O 文件
+          if file "$DYLIB" | grep -q "Mach-O"; then
+            echo "✅ Valid Mach-O dylib: $DYLIB"
+            file "$DYLIB"
+          else
+            echo "⚠️ File found but not a valid Mach-O (check arch)"
+            file "$DYLIB"
+          fi
+          echo "=== SUCCESS: NoBlurInject.dylib is ready ==="
 
       - name: Upload dylib
         uses: actions/upload-artifact@v4
@@ -82,4 +121,5 @@ jobs:
           name: NoBlurInject-dylib-arm64e
           path: |
             packages/*.deb
+            .theos/obj/arm64e/*.dylib
             .theos/obj/debug/*.dylib
