@@ -7,73 +7,47 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl git make clang ld64-x86-64-tools \
-            libc6-dev-i386 crossbuild-essential-arm64 crossbuild-essential-armhf
+          sudo apt-get install -y curl git make gcc clang
 
       - name: Install theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
 
-      - name: Install Homebrew (for ldid)
+      - name: Install ldid via Homebrew
         run: |
-          NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
 
-      - name: Install ldid via brew
+      - name: Install ldid
         run: |
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew install ldid
 
-      - name: Verify toolchain
-        run: |
-          export THEOS=$HOME/theos
-          export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
-          which ldid || echo "ldid not found"
-          $THEOS/bin/nic.pl --version 2>/dev/null || echo "nic not available"
-
-      - name: Build universal dylib (arm64 + arm64e)
+      - name: Build dylib
         run: |
           export THEOS=$HOME/theos
           export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
           
-          # Build arm64
-          make clean
-          make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64
-          cp .theos/obj/debug/NoBlurInject.dylib NoBlurInject-arm64.dylib || true
-          
-          # Build arm64e
+          # 只构建 arm64e（iPhone 13 mini 适用）
           make clean
           make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e
-          cp .theos/obj/debug/NoBlurInject.dylib NoBlurInject-arm64e.dylib || true
           
-          # Merge into universal binary
-          if [ -f NoBlurInject-arm64.dylib ] && [ -f NoBlurInject-arm64e.dylib ]; then
-            lipo -create \
-              NoBlurInject-arm64.dylib \
-              NoBlurInject-arm64e.dylib \
-              -output NoBlurInject-universal.dylib
-            echo "✅ Universal dylib created successfully"
-            file NoBlurInject-universal.dylib
-          elif [ -f NoBlurInject-arm64e.dylib ]; then
-            cp NoBlurInject-arm64e.dylib NoBlurInject-universal.dylib
-            echo "⚠️ Only arm64e built, using single arch"
-          else
-            echo "❌ Build failed - no dylib output found"
-            ls -la .theos/obj/debug/ 2>/dev/null || echo "no debug dir"
-            exit 1
-          fi
+          # 查找产物
+          find . -name "*.dylib" -o -name "*.deb" 2>/dev/null
+          ls -la packages/ 2>/dev/null || ls -la .theos/obj/debug/ 2>/dev/null || echo "No output found"
 
-      - name: Upload universal dylib
+      - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
-          name: NoBlurInject-universal-dylib
-          path: NoBlurInject-universal.dylib
+          name: NoBlurInject-dylib
+          path: |
+            packages/*.deb
+            .theos/obj/debug/*.dylib
