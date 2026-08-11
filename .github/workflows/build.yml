@@ -22,11 +22,10 @@ jobs:
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $THEOS
 
-      - name: Download & install clang toolchain (Linux -> iOS arm64e)
+      - name: Download toolchain (OFFICIAL latest)
         run: |
-          # 使用 v12.0.0-1 工具链，支持 TAPI v2
           curl -fL --retry 3 -o /tmp/toolchain.tar.lzma \
-            "https://github.com/sbingner/llvm-project/releases/download/v12.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma"
+            "https://github.com/sbingner/llvm-project/releases/latest/download/linux-ios-arm64e-clang-toolchain.tar.lzma"
           FILESIZE=$(stat -c %s /tmp/toolchain.tar.lzma)
           echo "Toolchain size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then
@@ -34,24 +33,25 @@ jobs:
             exit 1
           fi
           TMP=$(mktemp -d)
-          tar --lzma -xvf /tmp/toolchain.tar.lzma -C $TMP
+          tar -xvf /tmp/toolchain.tar.lzma -C $TMP
           mkdir -p $THEOS/toolchain/linux/iphone
-          cp -r $TMP/ios-arm64e-clang-toolchain/. $THEOS/toolchain/linux/iphone/
+          mv $TMP/ios-arm64e-clang-toolchain/* $THEOS/toolchain/linux/iphone/
           echo "✅ Toolchain installed"
+          ls $THEOS/toolchain/linux/iphone/bin/ | head -10
 
-      - name: Download iPhoneOS14.5 SDK (official)
+      - name: Download iPhoneOS15.6 SDK (OFFICIAL)
         run: |
           mkdir -p $THEOS/sdks
-          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS14.5.sdk.tar.xz"
+          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS15.6.sdk.tar.xz"
           echo "Downloading: $SDK_URL"
-          curl -fL --retry 3 -o /tmp/iOS14.5.sdk.tar.xz "$SDK_URL"
-          FILESIZE=$(stat -c %s /tmp/iOS14.5.sdk.tar.xz)
+          curl -fL --retry 3 -o /tmp/iOS15.6.sdk.tar.xz "$SDK_URL"
+          FILESIZE=$(stat -c %s /tmp/iOS15.6.sdk.tar.xz)
           echo "SDK size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then
-            echo "❌ SDK download failed"
+            echo "❌ SDK download failed ($FILESIZE bytes)"
             exit 1
           fi
-          tar -xJf /tmp/iOS14.5.sdk.tar.xz -C $THEOS/sdks/
+          tar -xJf /tmp/iOS15.6.sdk.tar.xz -C $THEOS/sdks/
           echo "✅ SDK extracted:"
           ls -d $THEOS/sdks/iPhoneOS*.sdk
 
@@ -62,23 +62,23 @@ jobs:
           brew install ldid
           echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
 
-      - name: Check Tweak.m for actual autorelease messages (not comments or @autoreleasepool)
+      - name: Check Tweak.m for autorelease bugs
         run: |
-          echo "=== Checking Tweak.m for actual [something autorelease] calls ==="
           if grep -nE '^\s*\[.*\sautorelease\]' Tweak.m; then
-            echo "❌ FATAL: Tweak.m contains actual autorelease message send"
+            echo "❌ FATAL: actual autorelease message send found"
             exit 1
           fi
-          echo "✅ No autorelease message sends found"
+          echo "✅ No autorelease message sends"
 
       - name: Build dylib (arm64e)
         run: |
           export THEOS=$THEOS
           export PATH="/home/linuxbrew/.linuxbrew/bin:$THEOS/toolchain/linux/iphone/bin:$PATH"
+          export SDKVERSION=15.6
           echo "=== Pre-build checks ==="
           ls -d $THEOS/sdks/iPhoneOS*.sdk
-          ls $THEOS/toolchain/linux/iphone/bin/ | head -5
-          echo "========================="
+          echo "clang version:" && clang --version | head -1
+          echo "======================="
           make clean
           make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e
           echo "=== Build artifacts ==="
@@ -86,24 +86,14 @@ jobs:
           ls -la packages/ 2>/dev/null
           ls -la .theos/obj/debug/ 2>/dev/null
 
-      - name: Verify dylib output
+      - name: Verify dylib
         run: |
-          echo "=== Verifying dylib output ==="
           DYLIB=$(find . -name "*.dylib" 2>/dev/null | head -1)
-          if [ -z "$DYLIB" ]; then
-            echo "❌ No .dylib found"
-            exit 1
-          fi
-          FILE_OUTPUT=$(file "$DYLIB")
-          echo "$FILE_OUTPUT"
-          if echo "$FILE_OUTPUT" | grep -q "Mach-O"; then
-            echo "✅ Valid Mach-O dylib"
-          else
-            echo "❌ Not a valid Mach-O file"
-            exit 1
-          fi
+          if [ -z "$DYLIB" ]; then echo "❌ No dylib"; exit 1; fi
+          file "$DYLIB"
+          if file "$DYLIB" | grep -q "Mach-O"; then echo "✅ Valid dylib"; else exit 1; fi
 
-      - name: Upload dylib
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: NoBlurInject-dylib-arm64e
