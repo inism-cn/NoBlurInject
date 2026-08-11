@@ -1,4 +1,4 @@
-name: Build NoBlurInject Universal dylib
+name: Build NoBlurInject dylib
 
 on:
   push:
@@ -14,12 +14,21 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl git make gcc clang
+          sudo apt-get install -y curl git make gcc clang unzip
 
       - name: Install theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: Download iOS SDK
+        run: |
+          mkdir -p $HOME/theos/sdks
+          # 下载 iOS 15.0 SDK（兼容 iOS 15.2）
+          curl -L -o iPhoneOS15.0.sdk.zip \
+            "https://github.com/xybp888/iOS-SDKs/releases/download/v1.0/iPhoneOS15.0.sdk.zip"
+          unzip -q iPhoneOS15.0.sdk.zip -d $HOME/theos/sdks/
+          ls -la $HOME/theos/sdks/
 
       - name: Install ldid via Homebrew
         run: |
