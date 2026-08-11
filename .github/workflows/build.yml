@@ -24,8 +24,9 @@ jobs:
 
       - name: Download & install clang toolchain (Linux -> iOS arm64e)
         run: |
+          # 使用 v12.0.0-1 工具链，支持 TAPI v2
           curl -fL --retry 3 -o /tmp/toolchain.tar.lzma \
-            "https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma"
+            "https://github.com/sbingner/llvm-project/releases/download/v12.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma"
           FILESIZE=$(stat -c %s /tmp/toolchain.tar.lzma)
           echo "Toolchain size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then
@@ -64,7 +65,6 @@ jobs:
       - name: Check Tweak.m for actual autorelease messages (not comments or @autoreleasepool)
         run: |
           echo "=== Checking Tweak.m for actual [something autorelease] calls ==="
-          # 只匹配 [xxx autorelease] 形式，排除注释行和 @autoreleasepool
           if grep -nE '^\s*\[.*\sautorelease\]' Tweak.m; then
             echo "❌ FATAL: Tweak.m contains actual autorelease message send"
             exit 1
