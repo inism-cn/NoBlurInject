@@ -2,7 +2,7 @@ name: Build NoBlurInject dylib
 
 on:
   push:
-    branches: [main, master]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -11,50 +11,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system deps
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl git make clang unzip xz-utils
+          sudo apt-get install -y curl git make fakeroot perl unzip xz-utils lzma
 
       - name: Clone theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Download & verify iOS SDK (iPhoneOS15.6)
+      - name: Download & install clang toolchain (Linux -> iOS arm64e)
         run: |
-          mkdir -p $HOME/theos/sdks
-          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS15.6.sdk.tar.xz"
-          echo "Downloading: $SDK_URL"
-          curl -fL --retry 3 -o /tmp/iPhoneOS15.6.sdk.tar.xz "$SDK_URL"
-
-          # 校验：文件大小应该 > 10MB（15.2 MB 左右）
-          FILESIZE=$(stat -c %s /tmp/iPhoneOS15.6.sdk.tar.xz)
-          echo "Downloaded file size: $FILESIZE bytes"
-          if [ "$FILESIZE" -lt 1000000 ]; then
-            echo "❌ ERROR: Downloaded file is too small ($FILESIZE bytes). Likely not a real SDK."
-            exit 1
-          fi
-
-          # 校验：应该是 xz 压缩格式
-          file /tmp/iPhoneOS15.6.sdk.tar.xz
-          tar -xJf /tmp/iPhoneOS15.6.sdk.tar.xz -C $HOME/theos/sdks/
-          echo "✅ SDK extracted:"
-          ls -la $HOME/theos/sdks/
-
-      - name: Download & verify clang toolchain (Linux -> iOS)
-        run: |
-          TOOLCHAIN_URL="https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma"
-          echo "Downloading toolchain: $TOOLCHAIN_URL"
-          curl -fL --retry 3 -o /tmp/toolchain.tar.lzma "$TOOLCHAIN_URL"
-
+          curl -fL --retry 3 -o /tmp/toolchain.tar.lzma \
+            "https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma"
+          
+          # 校验文件大小
           FILESIZE=$(stat -c %s /tmp/toolchain.tar.lzma)
-          echo "Toolchain file size: $FILESIZE bytes"
+          echo "Toolchain size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then
-            echo "❌ ERROR: Toolchain download failed ($FILESIZE bytes)"
+            echo "❌ Toolchain download failed"
             exit 1
           fi
-
+          
           TMP=$(mktemp -d)
           tar --lzma -xvf /tmp/toolchain.tar.lzma -C $TMP
           mkdir -p $THEOS/toolchain/linux/iphone
@@ -62,7 +41,29 @@ jobs:
           echo "✅ Toolchain installed:"
           ls $THEOS/toolchain/linux/iphone/bin/
 
-      - name: Install ldid
+      - name: Download & verify iPhoneOS15.6 SDK (official URL)
+        run: |
+          mkdir -p $THEOS/sdks
+          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS15.6.sdk.tar.xz"
+          echo "Downloading SDK from: $SDK_URL"
+          curl -fL --retry 3 -o /tmp/iPhoneOS15.6.sdk.tar.xz "$SDK_URL"
+          
+          # 校验文件大小 (应该是 ~15.2 MB)
+          FILESIZE=$(stat -c %s /tmp/iPhoneOS15.6.sdk.tar.xz)
+          echo "SDK file size: $FILESIZE bytes"
+          if [ "$FILESIZE" -lt 1000000 ]; then
+            echo "❌ SDK download failed ($FILESIZE bytes), trying fallback..."
+            # 备用方案：克隆整个 sdks 仓库
+            git clone --depth 1 https://github.com/theos/sdks.git /tmp/sdks-repo
+            cp -r /tmp/sdks-repo/iPhoneOS15.6.sdk $THEOS/sdks/
+            cp -r /tmp/sdks-repo/iPhoneOS16.5.sdk $THEOS/sdks/
+          else
+            tar -xJf /tmp/iPhoneOS15.6.sdk.tar.xz -C $THEOS/sdks/
+            echo "✅ SDK extracted:"
+            ls -la $THEOS/sdks/
+          fi
+
+      - name: Install ldid via Homebrew
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
@@ -74,15 +75,16 @@ jobs:
           export THEOS=$HOME/theos
           export PATH="/home/linuxbrew/.linuxbrew/bin:$THEOS/toolchain/linux/iphone/bin:$PATH"
           export SDKVERSION=15.6
-
+          
           make clean
           make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e
-
+          
           echo "=== Build output ==="
           find . -name "*.dylib" -o -name "*.deb" 2>/dev/null
-          ls -la packages/ 2>/dev/null || ls -la .theos/obj/debug/ 2>/dev/null
+          ls -la packages/ 2>/dev/null
+          ls -la .theos/obj/debug/ 2>/dev/null
 
-      - name: Upload artifacts
+      - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
           name: NoBlurInject-dylib-arm64e
