@@ -1,0 +1,159 @@
+name: Build NoBlurInject Universal dylib
+
+on:
+  workflow_dispatch:
+    inputs:
+      ios_version:
+        description: 'Target iOS version'
+        required: false
+        default: '15.0'
+        type: string
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  THEOS: ${{ github.workspace }}/theos
+  TWEAK_NAME: NoBlurInject
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Install system dependencies
+        run: |
+          set -e
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            git \
+            ca-certificates \
+            curl \
+            wget \
+            file \
+            xz-utils \
+            gzip \
+            python3 \
+            python3-pip \
+            bison \
+            flex \
+            libxml2-dev \
+            libssl-dev \
+            libcurl4-openssl-dev \
+            libplist-dev \
+            libzip-dev \
+            libpng-dev \
+            libjpeg-dev \
+            libtiff-dev \
+            libicu-dev \
+            zlib1g-dev \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config
+          echo "✅ System deps installed"
+
+      - name: 🔧 Install Homebrew (Linuxbrew)
+        run: |
+          set -e
+          # Use the official installer
+          echo | /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+          # Add brew to PATH
+          test -d /home/linuxbrew/.linuxbrew && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> $GITHUB_ENV
+          echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
+          brew --version || echo "brew not in PATH yet, will be after env reload"
+
+      - name: 🍺 Install theos via brew
+        run: |
+          set -e
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          brew update --quiet 2>/dev/null || true
+          brew install theos/tap/theos 2>&1 | tail -5
+          echo "THEOS=$(brew --prefix theos 2>/dev/null || echo /home/linuxbrew/.linuxbrew/share/theos)" >> $GITHUB_ENV
+          echo "✅ Theos installed"
+
+      - name: 🛠️ Fallback — manual theos install if brew failed
+        if: failure()
+        run: |
+          set -e
+          echo "⚠️ Brew install failed, trying manual install..."
+          cd $HOME
+          git clone --recursive --depth 1 https://github.com/theos/theos.git theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          ls $HOME/theos/makefiles/ | head -5
+
+      - name: ✅ Verify theos installation
+        run: |
+          set -e
+          echo "THEOS=$THEOS"
+          ls $THEOS/makefiles/common.mk
+          ls $THEOS/makefiles/tweak.mk
+          echo "✅ Theos verified at $THEOS"
+
+      - name: 🔨 Build arm64 dylib
+        run: |
+          set -e
+          export THEOS=${{ env.THEOS }}
+          export ARCHS=arm64
+          cd ${{ github.workspace }}
+          echo "→ Building arm64..."
+          make clean 2>/dev/null || true
+          make package -j4 2>&1 | tail -20
+          echo "✅ arm64 build done"
+          find .theos -name "NoBlurInject.dylib" 2>/dev/null
+
+      - name: 🔨 Build arm64e dylib
+        run: |
+          set -e
+          export THEOS=${{ env.THEOS }}
+          export ARCHS=arm64e
+          cd ${{ github.workspace }}
+          echo "→ Building arm64e..."
+          make clean 2>/dev/null || true
+          make package -j4 2>&1 | tail -20
+          echo "✅ arm64e build done"
+          find .theos -name "NoBlurInject.dylib" 2>/dev/null
+
+      - name: 🔗 Merge archs with lipo → universal dylib
+        run: |
+          set -e
+          cd ${{ github.workspace }}
+          ARM64=$(find .theos/obj -name "NoBlurInject.dylib" -path "*/arm64/*" | head -1)
+          ARM64E=$(find .theos/obj -name "NoBlurInject.dylib" -path "*/arm64e/*" | head -1)
+          echo "arm64  → $ARM64"
+          echo "arm64e → $ARM64E"
+          test -n "$ARM64" || { echo "❌ arm64 dylib not found"; exit 1; }
+          test -n "$ARM64E" || { echo "❌ arm64e dylib not found"; exit 1; }
+          mkdir -p packages
+          lipo -create "$ARM64" "$ARM64E" -output packages/NoBlurInject-universal.dylib
+          echo ""
+          echo "📋 Universal dylib info:"
+          lipo -info packages/NoBlurInject-universal.dylib
+          echo ""
+          echo "📊 File size:"
+          ls -lh packages/NoBlurInject-universal.dylib
+          echo "✅ Universal dylib created successfully"
+
+      - name: 📤 Upload universal dylib artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NoBlurInject-universal-dylib
+          path: ${{ github.workspace }}/packages/NoBlurInject-universal.dylib
+          retention-days: 90
+
+      - name: 📤 Upload debug artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-and-objects
+          path: |
+            ${{ github.workspace }}/.theos/
+            ${{ github.workspace }}/make.log
+          retention-days: 7
