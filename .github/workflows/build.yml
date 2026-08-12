@@ -7,34 +7,16 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: macos-latest
     env:
-      THEOS: /home/runner/theos
+      THEOS: /Users/runner/theos
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y curl git make fakeroot perl unzip xz-utils lzma libtinfo5 zstd
-
-      - name: Clone theos
+      - name: Install theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $THEOS
-
-      - name: Download CRKatri toolchain (supports 14.x SDKs, TAPI v2 compatible)
-        run: |
-          curl -fL --retry 3 -o /tmp/toolchain.tar.zst \
-            "https://github.com/CRKatri/llvm-project/releases/download/swift-5.3.2-RELEASE/swift-5.3.2-RELEASE-ubuntu18.04.tar.zst"
-          FILESIZE=$(stat -c %s /tmp/toolchain.tar.zst)
-          echo "Toolchain size: $FILESIZE bytes"
-          if [ "$FILESIZE" -lt 1000000 ]; then echo "❌ download failed"; exit 1; fi
-          TMP=$(mktemp -d)
-          tar -xvf /tmp/toolchain.tar.zst -C $TMP
-          mkdir -p $THEOS/toolchain/linux/iphone
-          mv $TMP/swift-5.3.2-RELEASE-ubuntu18.04/* $THEOS/toolchain/linux/iphone/
-          echo "✅ Toolchain installed"
-          clang --version | head -1
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
 
       - name: Download iPhoneOS14.5 SDK (official master-146e41f)
         run: |
@@ -42,7 +24,7 @@ jobs:
           SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS14.5.sdk.tar.xz"
           echo "Downloading: $SDK_URL"
           curl -fL --retry 3 -o /tmp/iOS14.5.sdk.tar.xz "$SDK_URL"
-          FILESIZE=$(stat -c %s /tmp/iOS14.5.sdk.tar.xz)
+          FILESIZE=$(stat -f %z /tmp/iOS14.5.sdk.tar.xz)
           echo "SDK size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then echo "❌ SDK download failed"; exit 1; fi
           tar -xJf /tmp/iOS14.5.sdk.tar.xz -C $THEOS/sdks/
@@ -50,16 +32,12 @@ jobs:
 
       - name: Install ldid
         run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew install ldid
-          echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
 
       - name: Build dylib (arm64e, SDK 14.5)
         run: |
           export THEOS=$THEOS
           export SDKVERSION=14.5
-          export PATH="/home/linuxbrew/.linuxbrew/bin:$THEOS/toolchain/linux/iphone/bin:$PATH"
           echo "=== Pre-build ==="
           ls -d $THEOS/sdks/iPhoneOS*.sdk
           clang --version | head -1
