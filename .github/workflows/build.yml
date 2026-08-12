@@ -16,7 +16,6 @@ jobs:
       - name: Install theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $THEOS
-          echo "THEOS=$THEOS" >> $GITHUB_ENV
 
       - name: Download iPhoneOS14.5 SDK (official master-146e41f)
         run: |
@@ -34,7 +33,7 @@ jobs:
         run: |
           brew install ldid
 
-      - name: Build dylib (arm64e, SDK 14.5)
+      - name: Build dylib only (no deb package)
         run: |
           export THEOS=$THEOS
           export SDKVERSION=14.5
@@ -42,24 +41,38 @@ jobs:
           ls -d $THEOS/sdks/iPhoneOS*.sdk
           clang --version | head -1
           grep "^TARGET" Makefile
+          echo "====================="
+          # 只做 make all，不调 make package
           make clean
-          make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=14.5
-          echo "=== Artifacts ==="
-          find . -name "*.dylib" -o -name "*.deb" 2>/dev/null
-          ls -la packages/ 2>/dev/null
-          ls -la .theos/obj/debug/ 2>/dev/null
+          make all FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=14.5
+          echo "=== Build artifacts ==="
+          find .theos/obj -name "*.dylib" 2>/dev/null
+          ls -la .theos/obj/arm64e/ 2>/dev/null
+
+      - name: Copy dylib to predictable path
+        run: |
+          mkdir -p output
+          DYLIB=$(find .theos/obj -name "NoBlurInject.dylib" 2>/dev/null | head -1)
+          if [ -z "$DYLIB" ]; then
+            echo "❌ NoBlurInject.dylib not found"
+            find .theos -type f 2>/dev/null
+            exit 1
+          fi
+          cp "$DYLIB" output/NoBlurInject.dylib
+          echo "✅ Copied to output/NoBlurInject.dylib"
+          file output/NoBlurInject.dylib
 
       - name: Verify dylib
         run: |
-          DYLIB=$(find . -name "*.dylib" 2>/dev/null | head -1)
-          if [ -z "$DYLIB" ]; then echo "❌ No dylib"; exit 1; fi
-          file "$DYLIB"
-          if file "$DYLIB" | grep -q "Mach-O"; then echo "✅ Valid"; else exit 1; fi
+          if file output/NoBlurInject.dylib | grep -q "Mach-O"; then
+            echo "✅ Valid Mach-O dylib"
+          else
+            echo "❌ Not a valid dylib"
+            exit 1
+          fi
 
-      - name: Upload
+      - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
           name: NoBlurInject-dylib-arm64e
-          path: |
-            packages/*.deb
-            .theos/obj/debug/*.dylib
+          path: output/NoBlurInject.dylib
