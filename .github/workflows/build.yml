@@ -43,7 +43,8 @@ jobs:
           grep "^TARGET" Makefile
           echo "====================="
           make clean
-          make all FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=14.5
+          # 👇👇👇 重点在这里，加上了 -Wl,-segalign,4000 强制纯 arm64 架构
+          make all FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=14.5 STRIPFLAGS="-Wl,-segalign,4000"
           echo "=== Build artifacts ==="
           find .theos/obj -name "*.dylib" 2>/dev/null
           ls -la .theos/obj/arm64e/ 2>/dev/null
