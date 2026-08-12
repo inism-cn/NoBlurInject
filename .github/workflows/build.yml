@@ -33,7 +33,7 @@ jobs:
         run: |
           brew install ldid
 
-      - name: Build dylib only (no deb package)
+      - name: Build dylib only (make all, not package)
         run: |
           export THEOS=$THEOS
           export SDKVERSION=14.5
@@ -42,7 +42,6 @@ jobs:
           clang --version | head -1
           grep "^TARGET" Makefile
           echo "====================="
-          # 只做 make all，不调 make package
           make clean
           make all FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=14.5
           echo "=== Build artifacts ==="
