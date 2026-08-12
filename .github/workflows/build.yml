@@ -16,26 +16,27 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl git make fakeroot perl unzip xz-utils lzma libncurses5
+          sudo apt-get install -y curl git make fakeroot perl unzip xz-utils lzma libtinfo5 zstd
 
       - name: Clone theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $THEOS
 
-      - name: Download toolchain (sbinger clang 10.0.0-1 — VERIFIED EXISTS)
+      - name: Download CRKatri toolchain (supports 14.x SDKs, TAPI v2 compatible)
         run: |
-          curl -fL --retry 3 -o /tmp/toolchain.tar.lzma \
-            "https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma"
-          FILESIZE=$(stat -c %s /tmp/toolchain.tar.lzma)
+          curl -fL --retry 3 -o /tmp/toolchain.tar.zst \
+            "https://github.com/CRKatri/llvm-project/releases/download/swift-5.3.2-RELEASE/swift-5.3.2-RELEASE-ubuntu18.04.tar.zst"
+          FILESIZE=$(stat -c %s /tmp/toolchain.tar.zst)
           echo "Toolchain size: $FILESIZE bytes"
           if [ "$FILESIZE" -lt 1000000 ]; then echo "❌ download failed"; exit 1; fi
           TMP=$(mktemp -d)
-          tar -xvf /tmp/toolchain.tar.lzma -C $TMP
+          tar -xvf /tmp/toolchain.tar.zst -C $TMP
           mkdir -p $THEOS/toolchain/linux/iphone
-          mv $TMP/ios-arm64e-clang-toolchain/* $THEOS/toolchain/linux/iphone/
+          mv $TMP/swift-5.3.2-RELEASE-ubuntu18.04/* $THEOS/toolchain/linux/iphone/
           echo "✅ Toolchain installed"
+          clang --version | head -1
 
-      - name: Download iPhoneOS14.5 SDK (VERIFIED EXISTS in master-146e41f)
+      - name: Download iPhoneOS14.5 SDK (official master-146e41f)
         run: |
           mkdir -p $THEOS/sdks
           SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS14.5.sdk.tar.xz"
