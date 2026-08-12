@@ -1,4 +1,4 @@
-name: Build NoBlurInject dylib
+name: Build NoBlurInject deb
 
 on:
   push:
@@ -17,62 +17,43 @@ jobs:
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $THEOS
 
-      - name: Download iPhoneOS14.5 SDK (official master-146e41f)
+      - name: Download iPhoneOS14.5 SDK
         run: |
           mkdir -p $THEOS/sdks
           SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS14.5.sdk.tar.xz"
-          echo "Downloading: $SDK_URL"
           curl -fL --retry 3 -o /tmp/iOS14.5.sdk.tar.xz "$SDK_URL"
-          FILESIZE=$(stat -f %z /tmp/iOS14.5.sdk.tar.xz)
-          echo "SDK size: $FILESIZE bytes"
-          if [ "$FILESIZE" -lt 1000000 ]; then echo "❌ SDK download failed"; exit 1; fi
           tar -xJf /tmp/iOS14.5.sdk.tar.xz -C $THEOS/sdks/
-          echo "✅ SDK extracted: $(ls -d $THEOS/sdks/iPhoneOS*.sdk)"
+          echo "✅ SDK: $(ls -d $THEOS/sdks/iPhoneOS*.sdk)"
 
       - name: Install ldid
-        run: |
-          brew install ldid
+        run: brew install ldid
 
-      - name: Build dylib only (make all, not package)
+      - name: Create DEBIAN/control for deb packaging
+        run: |
+          mkdir -p layout/DEBIAN
+          cat > layout/DEBIAN/control <<EOF
+          Package: com.yourusername.noblurinject
+          Name: NoBlurInject
+          Version: 1.0.0
+          Architecture: iphoneos-arm64e
+          Description: Remove background blur in app switcher for any app
+          Maintainer: Your Name
+          Author: Your Name
+          Section: Tweaks
+          Depends: firmware (>= 14.0)
+          EOF
+
+      - name: Build deb package
         run: |
           export THEOS=$THEOS
           export SDKVERSION=14.5
-          echo "=== Pre-build ==="
-          ls -d $THEOS/sdks/iPhoneOS*.sdk
-          clang --version | head -1
-          grep "^TARGET" Makefile
-          echo "====================="
           make clean
-          # 👇👇👇 重点在这里，加上了 -Wl,-segalign,4000 强制纯 arm64 架构
-          make all FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=14.5 STRIPFLAGS="-Wl,-segalign,4000"
-          echo "=== Build artifacts ==="
-          find .theos/obj -name "*.dylib" 2>/dev/null
-          ls -la .theos/obj/arm64e/ 2>/dev/null
+          make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=14.5
+          echo "=== Generated files ==="
+          ls -la packages/
 
-      - name: Copy dylib to predictable path
-        run: |
-          mkdir -p output
-          DYLIB=$(find .theos/obj -name "NoBlurInject.dylib" 2>/dev/null | head -1)
-          if [ -z "$DYLIB" ]; then
-            echo "❌ NoBlurInject.dylib not found"
-            find .theos -type f 2>/dev/null
-            exit 1
-          fi
-          cp "$DYLIB" output/NoBlurInject.dylib
-          echo "✅ Copied to output/NoBlurInject.dylib"
-          file output/NoBlurInject.dylib
-
-      - name: Verify dylib
-        run: |
-          if file output/NoBlurInject.dylib | grep -q "Mach-O"; then
-            echo "✅ Valid Mach-O dylib"
-          else
-            echo "❌ Not a valid dylib"
-            exit 1
-          fi
-
-      - name: Upload dylib
+      - name: Upload deb
         uses: actions/upload-artifact@v4
         with:
-          name: NoBlurInject-dylib-arm64e
-          path: output/NoBlurInject.dylib
+          name: NoBlurInject-deb
+          path: packages/*.deb
