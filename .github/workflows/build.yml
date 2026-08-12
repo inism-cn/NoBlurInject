@@ -48,7 +48,7 @@ jobs:
           export THEOS=$THEOS
           export SDKVERSION=14.5
           make clean
-          make package FINALPACKAGE=1 THEOS_BUILD_ARCH=arm64e SDKVERSION=14.5
+          make package FINALPACKAGE=1 THEOS_BUILD_ARCH="arm64 arm64e" SDKVERSION=14.5
           echo "=== Generated files ==="
           ls -la packages/
 
